@@ -1,0 +1,96 @@
+--Section B
+CREATE TABLE actor_rental_payment (
+	payment_id int,
+	actor_id int,
+	amount numeric(5,2),
+	PRIMARY KEY(payment_id, actor_id)
+);
+
+CREATE TABLE actor_rental_payment_sum (
+	actor_id int,
+	actor_name varchar(100),
+	sum_amount numeric(10,2),
+	PRIMARY KEY (actor_id)
+);
+
+--Section C
+INSERT INTO actor_rental_payment
+SELECT payment.payment_id, actor.actor_id, payment.amount
+FROM actor
+INNER JOIN film_actor ON actor.actor_id = film_actor.actor_id
+INNER JOIN film ON film.film_id = film_actor.film_id
+INNER JOIN inventory ON film_actor.film_id = inventory.film_id
+INNER JOIN rental ON inventory.inventory_id = rental.inventory_id
+INNER JOIN payment ON rental.rental_id = payment.rental_id;
+
+SELECT * FROM actor_rental_payment;
+
+--Section D
+CREATE OR REPLACE FUNCTION actor_full_name(a_id int)
+RETURNS varchar(100)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+	full_name varchar(100);
+BEGIN
+	SELECT CONCAT(first_name, ' ', last_name)
+	INTO full_name
+	FROM actor
+	WHERE actor_id = a_id;
+	
+	return full_name;
+END;$$;
+CREATE OR REPLACE FUNCTION sum_rental_payments(a_id int)
+RETURNS numeric(10,2)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+	payments_sum numeric(10,2);
+BEGIN
+	SELECT SUM(amount)
+	INTO payments_sum
+	FROM actor_rental_payment
+	WHERE actor_id = a_id;
+	
+	return payments_sum;
+END;$$;
+
+--Section E
+CREATE OR REPLACE FUNCTION update_actor_rental_payment_sum()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+	INSERT INTO actor_rental_payment_sum
+	SELECT actor_id, actor_full_name(actor_id) AS actor_name, sum_rental_payments(actor_id) AS sum_amount
+	FROM actor;
+		
+	RETURN NEW;
+END;$$;
+
+CREATE TRIGGER trigger_update
+	AFTER INSERT
+	ON actor_rental_payment
+	FOR EACH STATEMENT
+	EXECUTE PROCEDURE update_actor_rental_payment_sum();
+
+--Section F
+--Refresh every Monday
+--Automate refrsh with pgAgent
+CREATE OR REPLACE PROCEDURE update_all()
+LANGUAGE plpgsql
+AS $$
+BEGIN
+	DELETE FROM actor_rental_payment;
+	DELETE FROM actor_rental_payment_sum;
+
+	INSERT INTO actor_rental_payment
+	SELECT payment.payment_id, actor.actor_id, payment.amount
+	FROM actor
+	INNER JOIN film_actor ON actor.actor_id = film_actor.actor_id
+	INNER JOIN film ON film.film_id = film_actor.film_id
+	INNER JOIN inventory ON film_actor.film_id = inventory.film_id
+	INNER JOIN rental ON inventory.inventory_id = rental.inventory_id
+	INNER JOIN payment ON rental.rental_id = payment.rental_id;
+END;$$;
+
